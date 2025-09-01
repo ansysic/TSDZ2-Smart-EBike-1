@@ -2979,8 +2979,8 @@ static void uart_receive_package(void)
 
 static void uart_send_package(void)
 {
-	uint8_t ui8_i;
-	uint8_t ui8_tx_check_code;
+    uint8_t ui8_i;
+    uint8_t ui8_tx_check_code;
 	
 	// display ready
 	if (ui8_display_ready_flag) {
@@ -3412,8 +3412,27 @@ static void uart_send_package(void)
 		}
 #endif
 
-		// working status
-		ui8_tx_buffer[2] = (ui8_working_status & 0x1F);
+        // DEBUG: Force DZ40 to show brake status in km/h
+        // Always override transmitted speed-time bytes with target km/h based on brake state:
+        //  - 12 km/h when brake lever active
+        //  - 99 km/h when brake lever not active
+        // Mapping: time_value = (ui16_display_data_factor / 10) / target_speed_kmh
+        {
+            uint16_t factor = ui16_display_data_factor;
+            if (factor == 0U) {
+                // Fallback before first display wheel diameter is received
+                uint8_t diam = (ui8_oem_wheel_diameter ? ui8_oem_wheel_diameter : (uint8_t)28);
+                factor = (uint16_t)(OEM_WHEEL_FACTOR * diam);
+            }
+            uint16_t target_speed_kmh = (ui8_brake_state ? 12U : 99U);
+            uint16_t time_value = (uint16_t)((uint32_t)factor / (uint16_t)(10U * target_speed_kmh));
+            if (time_value == 0U) { time_value = 1U; }
+            ui8_tx_buffer[6] = (uint8_t)(time_value & 0xFF);
+            ui8_tx_buffer[7] = (uint8_t)(time_value >> 8);
+        }
+
+        // working status
+        ui8_tx_buffer[2] = (ui8_working_status & 0x1F);
 		
 		// clear motor working, wheel turning and working flags
 		ui8_working_status &= 0x3B;	
