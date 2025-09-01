@@ -4,7 +4,7 @@
 #Copyright 2016
 #LICENSE:	GNU-LGPL
 
-.PHONY: all clean mkdir build
+.PHONY: all clean build
 
 #Compiler
 CC = sdcc
@@ -72,22 +72,22 @@ LIBS =
 default: build
 all: build bin
 
-build: mkdir $(PNAME)
+build: $(ODIR) $(PNAME)
 # How to build the overall program
-$(PNAME): $(MAINSRC) $(RELS)
+$(PNAME): $(MAINSRC) $(RELS) | $(ODIR)
 	$(CC) $(INCLUDES) $(CFLAGS) $(DEBUG_FLAGS) $(LIBS) $(MAINSRC) $(RELS) -o$(ODIR)/$(PNAME).elf
 
 # 	$(SIZE) $(PNAME).elf	
 	$(OBJCOPY) -g $(ODIR)/$(PNAME).elf -O ihex $(ODIR)/$(PNAME).hex $(ELF_SECTIONS_TO_REMOVE)
 
 #Rules for firmware sources
-%.rel: %.c $(HEADERS)
+%.rel: %.c $(HEADERS) | $(ODIR)
 	$(CC) -c $(INCLUDES) $(CFLAGS) $(DEBUG_FLAGS) $(LIBS) -o$(ODIR)/ $<
 
-$(ODIR)/%.rel: %.c	
+$(ODIR)/%.rel: %.c | $(ODIR)
 	$(CC) -c $(INCLUDES) $(CFLAGS) $(DEBUG_FLAGS) $(LIBS) -o$(ODIR)/ $<
 #Rules for device driver sources
-$(ODIR)/%.rel: $(SDIR)/%.c	
+$(ODIR)/%.rel: $(SDIR)/%.c | $(ODIR)
 	$(CC) -c $(INCLUDES) $(CFLAGS) $(DEBUG_FLAGS) $(LIBS) -o$(ODIR)/ $<
 
 # Suffixes appearing in suffix rules we care about.
@@ -113,8 +113,8 @@ clean:
 	@rm -rf $(ODIR)
 	@echo "Done."
 
-mkdir:
-	mkdir -p $(ODIR)
+$(ODIR):
+	mkdir -p $@
 
 ## uncomment to print make variables
 # debug_make:
