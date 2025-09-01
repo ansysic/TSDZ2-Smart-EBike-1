@@ -248,6 +248,7 @@ static void calc_cadence(void);
 static void ebike_control_lights(void);
 static void ebike_control_motor(void);
 static void check_system(void);
+static void check_boot_brake_unlock(void);
 
 static void set_motor_ramp(void);
 static void apply_startup_boost(void);
@@ -404,6 +405,9 @@ void ebike_app_init(void)
 
 void ebike_app_controller(void)
 {
+	// boot-time brake toggle unlock (runs on 25ms controller tick)
+	check_boot_brake_unlock();
+
 	// calculate motor ERPS
     uint16_t ui16_tmp = ui16_hall_counter_total;
     if (((uint8_t)(ui16_tmp>>8)) & 0x80) {
@@ -1539,6 +1543,62 @@ static void calc_cadence(void)
      (2) Cadence in RPM = (PWM_CYCLES_SECOND * 3) / ticks
 
      -------------------------------------------------------------------------------------------------*/
+}
+
+// Detect 5 brake lever toggles within first 10s after boot to disable street mode and set power assist
+static void check_boot_brake_unlock(void)
+{
+    // 10 seconds window at 25ms per tick => 400 ticks
+    const uint16_t window_ticks = 400;
+    const uint8_t required_toggles = 5;
+
+    static uint8_t initialized = 0;
+    static uint8_t last_brake_state = 0;
+    static uint8_t toggle_count = 0;
+    static uint16_t tick_count = 0;
+    static uint8_t finished = 0;
+
+    if (finished) {
+        return;
+    }
+
+    // initialize on first run with current brake state
+    if (!initialized) {
+        last_brake_state = ui8_brake_state;
+        initialized = 1;
+    }
+
+    // Count presses only: a toggle is a transition to active (1)
+    if ((ui8_brake_state != last_brake_state) && (ui8_brake_state == 1)) {
+        last_brake_state = ui8_brake_state;
+        if (toggle_count < 255) { // safety cap
+            toggle_count++;
+        }
+    } else {
+        // track state to allow next edge detection
+        last_brake_state = ui8_brake_state;
+    }
+
+    // If sequence achieved within window, disable street mode and set power assist
+    if (toggle_count >= required_toggles) {
+        m_configuration_variables.ui8_street_mode_enabled = OFFROAD_MODE;
+        ui8_display_function_status[0][ECO] = m_configuration_variables.ui8_street_mode_enabled;
+        m_configuration_variables.ui8_riding_mode = POWER_ASSIST_MODE;
+
+        // Apply offroad speed and power limits immediately (works even without display)
+        m_configuration_variables.ui8_wheel_speed_max = ui8_wheel_speed_max_array[OFFROAD_MODE];
+        ui8_adc_battery_current_max_temp_2 = (uint8_t)((uint32_t)(ui32_adc_battery_power_max_x1000_array[OFFROAD_MODE]
+            / ui16_battery_voltage_filtered_x1000));
+        ui8_adc_battery_current_max = ui8_min(ui8_adc_battery_current_max_temp_1, ui8_adc_battery_current_max_temp_2);
+
+        finished = 1;
+        return;
+    }
+
+    // Advance window timer and lock after 10 seconds if not achieved
+    if (++tick_count >= window_ticks) {
+        finished = 1; // window expired, do nothing else for rest of runtime
+    }
 }
 
 
